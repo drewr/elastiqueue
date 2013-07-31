@@ -31,6 +31,9 @@
 (defn publish-url [^Queue queue]
   (format "%s/%s/%s" (:uri queue) (:exchange queue) (:name queue)))
 
+(defn bulk-url [^Queue queue]
+  (format "%s/%s/%s/_bulk" (:uri queue) (:exchange queue) (:name queue)))
+
 (defn get-url [^Queue queue id]
   (format "%s/%s/%s/%s"
           (:uri queue) (:exchange queue) (:name queue) id))
@@ -50,10 +53,37 @@
   (http/post (publish-url queue)
              {:body (json/encode payload)}))
 
+(defn post-bulk [^Queue queue bulk]
+  (http/post (bulk-url queue) {:body bulk}))
+
 (defn publish [^Queue queue payload]
   (let [resp (post-message queue payload)]
     (wait-for-health (:uri queue) :yellow)
     resp))
+
+(defn make-indexable-bulk [coll]
+  (str
+   (->> (interleave
+         (map json/encode (repeat {:index {}}))
+         (map json/encode coll))
+        (interpose "\n")
+        (apply str))
+   "\n"))
+
+(defn bulk-summary [response]
+  (->> (json/decode (:body response) true)
+       :items
+       (map vals)
+       (map first)
+       (reduce (fn [res item]
+                 (if (:ok item)
+                   (update-in res [:success] inc)
+                   (update-in res [:errors] inc)))
+               {:success 0 :errors 0})))
+
+(defn publish-seq [^Queue queue coll]
+  (let [resp (post-bulk queue (make-indexable-bulk coll))]
+    (bulk-summary resp)))
 
 (defn get-msg [queue id]
   (json/decode (:body (http/get (get-url queue id))) true))

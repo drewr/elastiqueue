@@ -1,6 +1,6 @@
-(defproject org.elasticsearch/newsroom "0.99.0"
+(defproject org.elasticsearch/workroom "0.99.0"
   :description "Publish/consume"
-  :url "https://github.com/drewr/newsroom"
+  :url "https://github.com/drewr/workroom"
   :license {:name "The Apache 2 License"
             :url "http://www.apache.org/licenses/LICENSE-2.0.html"
             :distribution :repo}

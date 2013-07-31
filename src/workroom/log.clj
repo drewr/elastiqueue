@@ -1,4 +1,4 @@
-(ns newsroom.log)
+(ns workroom.log)
 
 (def logger
   (agent nil))

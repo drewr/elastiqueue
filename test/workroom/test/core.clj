@@ -1,6 +1,6 @@
-(ns newsroom.test.core
-  (:require [newsroom.core :as news]
-            [newsroom.log :as log]
+(ns workroom.test.core
+  (:require [workroom.core :as work]
+            [workroom.log :as log]
             [clojure.test :refer :all])
   (:import (java.util.concurrent Executors TimeUnit)))
 
@@ -8,7 +8,7 @@
   (format "test-%d" (System/currentTimeMillis)))
 
 (deftest integrate!
-  (let [q (news/->Queue "http://localhost:9200" (rand-queue) "foo")
+  (let [q (work/->Queue "http://localhost:9200" (rand-queue) "foo")
         msgs 75
         pool (Executors/newFixedThreadPool
               (.availableProcessors (Runtime/getRuntime)))
@@ -19,14 +19,14 @@
     (dotimes [x msgs]
       (.execute pool
                 (fn []
-                  (news/publish q {:n 1 :x x})
+                  (work/publish q {:n 1 :x x})
                   (.countDown published))))
     (.await published)
     (dotimes [_ msgs]
-      #_(log/log 'remain (news/queue-size q))
+      #_(log/log 'remain (work/queue-size q))
       (.execute pool
                 (fn []
-                  (news/consume q (fn [msg]
+                  (work/consume q (fn [msg]
                                     (when msg
                                       #_(log/log 'consume (-> msg :_source :x))
                                       (swap! n + (-> msg :_source :n))

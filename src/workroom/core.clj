@@ -1,8 +1,8 @@
-(ns newsroom.core
+(ns workroom.core
   (:require [clj-http.client :as http]
             [cheshire.core :as json]
             [slingshot.slingshot :refer [try+ throw+]]
-            [newsroom.log :as log]))
+            [workroom.log :as log]))
 
 (defrecord Queue [uri exchange name])
 

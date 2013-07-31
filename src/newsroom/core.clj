@@ -6,13 +6,16 @@
 
 (defrecord Queue [uri exchange name])
 
+(def status-field
+  :__q_status)
+
 (defn consumable-query [queue-name]
   {:query
    {:bool
     {:must [{:constant_score
              {:filter
               {:missing
-               {:field :__q_status
+               {:field status-field
                 :existence true
                 :null_value true}}}}
             {:prefix
@@ -65,7 +68,7 @@
   (-> (consumables queue) :hits :total))
 
 (defn update-status [msg status]
-  (let [payload (assoc (:_source msg) :__q_status status)
+  (let [payload (assoc (:_source msg) status-field status)
         queue (->Queue (:_uri msg) (:_index msg) (:_type msg))
         response (http/put (update-url queue (:_id msg) (:_version msg))
                            {:body (json/encode payload)})]

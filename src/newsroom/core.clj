@@ -87,7 +87,7 @@
     (assoc msg
       :_uri (:uri queue))))
 
-(defn consume* [queue wait retry]
+(defn consume-wait [queue wait retry]
   #_(log/log 'retry retry)
   (when (pos? retry)
     (if-let [msg (try+
@@ -106,7 +106,7 @@
   ([^Queue queue f]
      (f (consume queue)))
   ([^Queue queue wait retry]
-     (consume* queue wait retry))
+     (consume-wait queue wait retry))
   ([^Queue queue wait retry f]
      (f (consume queue wait retry))))
 

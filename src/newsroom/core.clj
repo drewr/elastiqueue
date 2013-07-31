@@ -12,7 +12,7 @@
     {:must [{:constant_score
              {:filter
               {:missing
-               {:field :status
+               {:field :__q_status
                 :existence true
                 :null_value true}}}}
             {:prefix
@@ -33,7 +33,7 @@
           (:uri queue) (:exchange queue) (:name queue) id))
 
 (defn update-url [^Queue queue id version]
-  (format "%s/%s/%s/%s/_update?version=%d&refresh=true"
+  (format "%s/%s/%s/%s?version=%d&refresh=true"
           (:uri queue) (:exchange queue) (:name queue) id version))
 
 (defn health-url [es status]
@@ -65,10 +65,10 @@
   (-> (consumables queue) :hits :total))
 
 (defn update-status [msg status]
-  (let [payload {:doc {:status status}}
+  (let [payload (assoc (:_source msg) :__q_status status)
         queue (->Queue (:_uri msg) (:_index msg) (:_type msg))
-        response (http/post (update-url queue (:_id msg) (:_version msg))
-                            {:body (json/encode payload)})]
+        response (http/put (update-url queue (:_id msg) (:_version msg))
+                           {:body (json/encode payload)})]
     (json/decode (:body response) true)))
 
 (defn unack [msg]

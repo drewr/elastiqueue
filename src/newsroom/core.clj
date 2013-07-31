@@ -88,18 +88,17 @@
       :_uri (:uri queue))))
 
 (defn consume* [queue wait retry]
-  (loop [retry retry]
-    #_(log/log 'retry retry)
-    (when (pos? retry)
-      (if-let [msg (try+
-                     (when-let [msg (head queue)]
-                       (unack msg)
-                       msg)
-                     (catch [:status 409] _))]
-        msg
-        (do
-          (Thread/sleep wait)
-          (recur (dec retry)))))))
+  #_(log/log 'retry retry)
+  (when (pos? retry)
+    (if-let [msg (try+
+                   (when-let [msg (head queue)]
+                     (unack msg)
+                     msg)
+                   (catch [:status 409] _))]
+      msg
+      (do
+        (Thread/sleep wait)
+        (recur queue wait (dec retry))))))
 
 (defn consume
   ([^Queue queue]

@@ -84,25 +84,26 @@
     (assoc msg
       :_uri (:uri queue))))
 
-(defn consume*
-  ([queue]
-     (consume* queue 150 100))
-  ([queue wait retries]
-     (loop [retries retries]
-       #_(log/log 'retries retries)
-       (when (pos? retries)
-         (if-let [msg (try+
-                        (when-let [msg (head queue)]
-                          (unack msg)
-                          msg)
-                        (catch [:status 409] {:keys [status]}))]
-           msg
-           (do
-             (Thread/sleep wait)
-             (recur (dec retries))))))))
+(defn consume* [queue wait retry]
+  (loop [retry retry]
+    #_(log/log 'retry retry)
+    (when (pos? retry)
+      (if-let [msg (try+
+                     (when-let [msg (head queue)]
+                       (unack msg)
+                       msg)
+                     (catch [:status 409] _))]
+        msg
+        (do
+          (Thread/sleep wait)
+          (recur (dec retry)))))))
 
 (defn consume
   ([^Queue queue]
-     (consume* queue))
+     (consume queue 150 20))
   ([^Queue queue f]
-     (f (consume queue))))
+     (f (consume queue)))
+  ([^Queue queue wait retry]
+     (consume* queue wait retry))
+  ([^Queue queue wait retry f]
+     (f (consume queue wait retry))))

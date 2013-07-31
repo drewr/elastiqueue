@@ -109,3 +109,11 @@
      (consume* queue wait retry))
   ([^Queue queue wait retry f]
      (f (consume queue wait retry))))
+
+(defn consume-poll
+  ([^Queue queue f]
+     (consume-poll queue 5000 f))
+  ([^Queue queue ^Integer poll-ms f]
+      (consume queue 0 1 f)
+      (Thread/sleep poll-ms)
+      (recur queue poll-ms f)))

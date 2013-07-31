@@ -87,14 +87,17 @@
     (assoc msg
       :_uri (:uri queue))))
 
+(defn consume-msg [queue]
+  (try+
+    (when-let [msg (head queue)]
+      (unack msg)
+      msg)
+    (catch [:status 409] _)))
+
 (defn consume-wait [queue wait retry]
   #_(log/log 'retry retry)
   (when (pos? retry)
-    (if-let [msg (try+
-                   (when-let [msg (head queue)]
-                     (unack msg)
-                     msg)
-                   (catch [:status 409] _))]
+    (if-let [msg (consume-msg queue)]
       msg
       (do
         (Thread/sleep wait)
@@ -114,6 +117,24 @@
   ([^Queue queue f]
      (consume-poll queue 5000 f))
   ([^Queue queue ^Integer poll-ms f]
-      (consume queue 0 1 f)
-      (Thread/sleep poll-ms)
-      (recur queue poll-ms f)))
+     (if-let [msg (consume-msg queue)]
+       (f msg)
+       (do
+         (log/log 'sleep)
+         (Thread/sleep poll-ms)))
+     (recur queue poll-ms f)))
+
+(comment
+  (.start
+   (Thread.
+    (fn []
+      (let [q (->Queue "http://localhost:9200"
+                       "queuetest"
+                       "test.foo")]
+        (consume-poll q 5000
+                      (fn [msg]
+                        (log/log 'got (-> msg :_id))))))
+    (str "worker-" (rand-int 1000))))
+
+
+  )

@@ -4,34 +4,37 @@
             [clojure.test :refer :all])
   (:import (java.util.concurrent Executors TimeUnit)))
 
-(def q
-  (news/->Queue "http://localhost:9200" "queuetest" "foo"))
+(defn rand-queue []
+  (format "test-%d" (System/currentTimeMillis)))
 
 (deftest integrate!
-  (let [msgs 100
-        publisher (Executors/newFixedThreadPool
-                   (.availableProcessors (Runtime/getRuntime)))
+  (let [q (news/->Queue "http://localhost:9200" (rand-queue) "foo")
+        msgs 75
+        pool (Executors/newFixedThreadPool
+              (.availableProcessors (Runtime/getRuntime)))
         published (java.util.concurrent.CountDownLatch. msgs)
-        consumer (Executors/newFixedThreadPool
-                  (.availableProcessors (Runtime/getRuntime)))
         consumed (java.util.concurrent.CountDownLatch. msgs)
         n (atom 0)
         xs (atom (sorted-set))]
     (dotimes [x msgs]
-      (.execute publisher
+      (.execute pool
                 (fn []
                   (news/publish q {:n 1 :x x})
                   (.countDown published))))
     (.await published)
     (dotimes [_ msgs]
-      (.execute consumer
+      #_(log/log 'remain (news/queue-size q))
+      (.execute pool
                 (fn []
                   (news/consume q (fn [msg]
-                                    #_(log/log 'consume msg)
                                     (when msg
+                                      #_(log/log 'consume (-> msg :_source :x))
                                       (swap! n + (-> msg :_source :n))
-                                      (swap! xs conj (-> msg :_source :x)))
-                                    (.countDown consumed))))))
+                                      (swap! xs conj (-> msg :_source :x))
+                                      (.countDown consumed))))))
+      #_(Thread/sleep (rand-int 100)))
     (.await consumed)
+    (log/log pool)
     (is (= msgs @n))
-    (is (= (set (range msgs)) @xs))))
+    (is (= msgs (count @xs)))
+    (is (= (apply sorted-set (range msgs)) @xs))))

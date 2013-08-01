@@ -9,8 +9,8 @@
 (def status-field
   :__q_status)
 
-(def death-field
-  :__q_die)
+(def control-field
+  :__q_control)
 
 (defn consumable-query [queue-name]
   {:query
@@ -23,13 +23,18 @@
                 :null_value true}}}}
             {:prefix
              {:_type queue-name}}]}}
-   :sort [{death-field {:order "desc"}}]
+   :sort [{control-field {:order "desc"}}]
    :size 1})
 
-(defn consumable-url [queue]
+(defn search-url [queue]
   (format (str "%s/%s/%s/_search?"
                "preference=_primary"
                "&version=true")
+          (:uri queue) (:exchange queue) (:name queue)))
+
+(defn count-url [queue]
+  (format (str "%s/%s/%s/_count?"
+               "preference=_primary")
           (:uri queue) (:exchange queue) (:name queue)))
 
 (defn publish-url [^Queue queue]
@@ -50,12 +55,13 @@
   (format "%s/_cluster/health?wait_for_status=%s"
           es (name status)))
 
-(defn delete-poison-url [^Queue queue]
-  (format "%s/%s/%s/_query?q=%s:true"
+(defn delete-control-url [^Queue queue]
+  (format "%s/%s/%s/_query?q=%s:die OR %s:pause"
           (:uri queue)
           (:exchange queue)
           (:name queue)
-          (name death-field)))
+          (name control-field)
+          (name control-field)))
 
 (defn wait-for-health [es status]
   (http/get (health-url es status)))
@@ -67,8 +73,8 @@
 (defn post-bulk [^Queue queue bulk]
   (http/post (bulk-url queue) {:body bulk}))
 
-(defn delete-poison [^Queue queue]
-  (http/delete (delete-poison-url queue)))
+(defn delete-control [^Queue queue]
+  (http/delete (delete-control-url queue)))
 
 (defn publish [^Queue queue payload]
   (let [resp (post-message queue payload)]
@@ -103,7 +109,7 @@
   (json/decode (:body (http/get (get-url queue id))) true))
 
 (defn consumables [^Queue queue]
-  (let [response (http/get (consumable-url queue)
+  (let [response (http/get (search-url queue)
                            {:body (json/encode (consumable-query
                                                 (:name queue)))})]
     (json/decode (:body response) true)))
@@ -112,10 +118,31 @@
   (-> (consumables queue) :hits :total))
 
 (defn disable-queue-and-kill-consumers [^Queue queue]
-  (publish queue {death-field true}))
+  (publish queue {control-field :die}))
+
+(defn pause-queue [^Queue queue]
+  (publish queue {control-field :pause}))
 
 (defn enable-queue [^Queue queue]
-  (delete-poison queue))
+  (delete-control queue))
+
+(defn paused? [^Queue queue]
+  (let [response (http/post (count-url queue)
+                            {:body
+                             (json/encode
+                              {:match
+                               {control-field "pause"}})})
+        total (-> response :body (#(json/decode % true)) :count)]
+    (pos? total)))
+
+(defn disabled? [^Queue queue]
+  (let [response (http/post (count-url queue)
+                            {:body
+                             (json/encode
+                              {:match
+                               {control-field "die"}})})
+        total (-> response :body (#(json/decode % true)) :count)]
+    (pos? total)))
 
 (defn update-status [msg status]
   (let [payload (assoc (:_source msg) status-field status)
@@ -137,11 +164,14 @@
     (assoc msg
       :_uri (:uri queue))))
 
+(defn control-msg? [msg]
+  (-> msg :_source control-field))
+
 (defn consume-msg [queue]
   (try+
     (when-let [msg (head queue)]
-      (if (-> msg :_source death-field)
-        ::die!
+      (if (control-msg? msg)
+        (-> msg :_source control-field)
         (do
           (unack msg)
           msg)))
@@ -175,28 +205,32 @@
      (consume-poll queue 5000 f))
   ([^Queue queue ^Integer poll-ms f]
      (let [msg (consume-msg queue)]
-       (when-not (= msg ::die!)
-         (if msg
-           (f msg)
-           (sleep poll-ms))
+       (when-not (= msg "die")
+         (if (or (nil? msg) (= msg "pause"))
+           (sleep poll-ms)
+           (f msg))
          (recur queue poll-ms f)))))
 
-(comment
-  (publish-seq q (map #(hash-map :n %) (range 5000)))
+(defn handle-msg [msg])
 
-  (.start
-   (Thread.
-    (fn []
-      (let [q (->Queue "http://localhost:9200"
-                       "queuetest"
-                       "test.foo")
-            c (atom 0)]
-        (consume-poll q 5000
-                      (fn [msg]
-                        #_(log/log 'got (-> msg :_id))
-                        (swap! c inc)
-                        #_(log/log @c)))
-        (log/log 'die c)))))
+(comment
+  (def q (->Queue "http://localhost:9200"
+                  "queuetest"
+                  "test.foo"))
+
+  (publish-seq q (map #(hash-map :n %) (range 10)))
+
+  (def worker
+    (let [c (atom 0)]
+      (.start
+       (Thread.
+        (fn []
+          (consume-poll q 5000
+                        (fn [msg]
+                          (handle-msg msg)
+                          (swap! c inc)))
+          (log/log 'die c))))
+      c))
 
 
   )

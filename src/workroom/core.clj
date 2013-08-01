@@ -147,6 +147,8 @@
   ([^Queue queue f]
      (consume-poll queue 5000 f))
   ([^Queue queue ^Integer poll-ms f]
+     ;; Add consumer death....
+
      (if-let [msg (consume-msg queue)]
        (f msg)
        (do

@@ -144,6 +144,14 @@
         total (-> response :body (#(json/decode % true)) :count)]
     (pos? total)))
 
+(defn unack-count [^Queue queue]
+  (let [response (http/post (count-url queue)
+                            {:body
+                             (json/encode
+                              {:match
+                               {status-field "unack"}})})]
+    (-> response :body (#(json/decode % true)) :count)))
+
 (defn update-status [msg status]
   (let [payload (assoc (:_source msg) status-field status)
         queue (->Queue (:_uri msg) (:_index msg) (:_type msg))

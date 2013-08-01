@@ -9,6 +9,9 @@
 (def status-field
   :__q_status)
 
+(def death-field
+  :__q_die)
+
 (defn consumable-query [queue-name]
   {:query
    {:bool
@@ -20,6 +23,7 @@
                 :null_value true}}}}
             {:prefix
              {:_type queue-name}}]}}
+   :sort [{death-field {:order "desc"}}]
    :size 1})
 
 (defn consumable-url [queue]
@@ -46,6 +50,13 @@
   (format "%s/_cluster/health?wait_for_status=%s"
           es (name status)))
 
+(defn delete-poison-url [^Queue queue]
+  (format "%s/%s/%s/_query?q=%s:true"
+          (:uri queue)
+          (:exchange queue)
+          (:name queue)
+          (name death-field)))
+
 (defn wait-for-health [es status]
   (http/get (health-url es status)))
 
@@ -55,6 +66,9 @@
 
 (defn post-bulk [^Queue queue bulk]
   (http/post (bulk-url queue) {:body bulk}))
+
+(defn delete-poison [^Queue queue]
+  (http/delete (delete-poison-url queue)))
 
 (defn publish [^Queue queue payload]
   (let [resp (post-message queue payload)]
@@ -97,6 +111,12 @@
 (defn queue-size [^Queue queue]
   (-> (consumables queue) :hits :total))
 
+(defn disable-queue-and-kill-consumers [^Queue queue]
+  (publish queue {death-field true}))
+
+(defn enable-queue [^Queue queue]
+  (delete-poison queue))
+
 (defn update-status [msg status]
   (let [payload (assoc (:_source msg) status-field status)
         queue (->Queue (:_uri msg) (:_index msg) (:_type msg))
@@ -120,8 +140,11 @@
 (defn consume-msg [queue]
   (try+
     (when-let [msg (head queue)]
-      (unack msg)
-      msg)
+      (if (-> msg :_source death-field)
+        ::die!
+        (do
+          (unack msg)
+          msg)))
     (catch [:status 409] _)))
 
 (defn consume-wait [queue wait retry]
@@ -143,30 +166,37 @@
   ([^Queue queue wait retry f]
      (f (consume queue wait retry))))
 
+(defn sleep [ms]
+  (log/log 'sleep)
+  (.sleep java.util.concurrent.TimeUnit/MILLISECONDS ms))
+
 (defn consume-poll
   ([^Queue queue f]
      (consume-poll queue 5000 f))
   ([^Queue queue ^Integer poll-ms f]
-     ;; Add consumer death....
-
-     (if-let [msg (consume-msg queue)]
-       (f msg)
-       (do
-         (log/log 'sleep)
-         (Thread/sleep poll-ms)))
-     (recur queue poll-ms f)))
+     (let [msg (consume-msg queue)]
+       (when-not (= msg ::die!)
+         (if msg
+           (f msg)
+           (sleep poll-ms))
+         (recur queue poll-ms f)))))
 
 (comment
+  (publish-seq q (map #(hash-map :n %) (range 5000)))
+
   (.start
    (Thread.
     (fn []
       (let [q (->Queue "http://localhost:9200"
                        "queuetest"
-                       "test.foo")]
+                       "test.foo")
+            c (atom 0)]
         (consume-poll q 5000
                       (fn [msg]
-                        (log/log 'got (-> msg :_id))))))
-    (str "worker-" (rand-int 1000))))
+                        #_(log/log 'got (-> msg :_id))
+                        (swap! c inc)
+                        #_(log/log @c)))
+        (log/log 'die c)))))
 
 
   )

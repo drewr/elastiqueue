@@ -8,7 +8,8 @@
   (format "test-%d" (System/currentTimeMillis)))
 
 (deftest integrate!
-  (let [q (work/->Queue "http://localhost:9200" (rand-queue) "foo")
+  (let [q (work/declare-queue
+           (work/->Queue "http://localhost:9200" (rand-queue) "foo"))
         msgs 75
         pool (Executors/newFixedThreadPool
               (.availableProcessors (Runtime/getRuntime)))
@@ -32,7 +33,7 @@
                                       (swap! n + (-> msg :_source :n))
                                       (swap! xs conj (-> msg :_source :x))
                                       (.countDown consumed))))))
-      #_(Thread/sleep (rand-int 100)))
+      (Thread/sleep (rand-int 50)))
     (.await consumed)
     (log/log pool)
     (is (= msgs @n))

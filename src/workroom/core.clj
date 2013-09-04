@@ -51,9 +51,9 @@
   (format "%s/%s/%s/%s?version=%d&refresh=true"
           (:uri queue) (:exchange queue) (:name queue) id version))
 
-(defn health-url [es status]
-  (format "%s/_cluster/health?wait_for_status=%s"
-          es (name status)))
+(defn health-url [q status]
+  (format "%s/_cluster/health/%s?wait_for_status=%s"
+          (:uri q) (:exchange q) (name status)))
 
 (defn delete-control-url [^Queue queue]
   (format "%s/%s/%s/_query?q=%s:die OR %s:pause"
@@ -63,8 +63,21 @@
           (name control-field)
           (name control-field)))
 
-(defn wait-for-health [es status]
-  (http/get (health-url es status)))
+(defn wait-for-health [q status]
+  (http/get (health-url q status)))
+
+(defn declare-queue [q]
+  (http/put (format "%s/%s" (:uri q) (:exchange q))
+            {:body (json/encode
+                    {:mappings
+                     {(:name q)
+                      {:properties
+                       {control-field {:type :string}}}}})})
+  (wait-for-health q :yellow)
+  q)
+
+(defn delete-queue [q]
+  (http/delete (format "%s/%s" (:uri q) (:exchange q))))
 
 (defn post-message [^Queue queue payload]
   (http/post (publish-url queue)
@@ -78,7 +91,7 @@
 
 (defn publish [^Queue queue payload]
   (let [resp (post-message queue payload)]
-    (wait-for-health (:uri queue) :yellow)
+    (wait-for-health queue :yellow)
     resp))
 
 (defn make-indexable-bulk [coll]
@@ -225,6 +238,8 @@
   (def q (->Queue "http://localhost:9200"
                   "queuetest"
                   "test.foo"))
+
+  (declare-queue q)
 
   (publish-seq q (map #(hash-map :n %) (range 10)))
 

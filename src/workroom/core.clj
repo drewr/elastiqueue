@@ -66,10 +66,17 @@
 (defn wait-for-health [q status]
   (http/get (health-url q status)))
 
-(defn declare-queue [q]
+(defn declare-queue [q & {:keys [shards replicas store]
+                          :or {shards 1
+                               replicas 0
+                               store :niofs}}]
   (http/put (format "%s/%s" (:uri q) (:exchange q))
             {:body (json/encode
-                    {:mappings
+                    {:settings
+                     {:number_of_shards shards
+                      :number_of_replicas replicas
+                      :store.type store}
+                     :mappings
                      {(:name q)
                       {:properties
                        {control-field {:type :string}}}}})})

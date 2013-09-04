@@ -7,35 +7,41 @@
 (defn rand-queue []
   (format "test-%d" (System/currentTimeMillis)))
 
+(defmacro time* [op & body]
+  `(let [start# (System/currentTimeMillis)]
+     ~@body
+     (log/log ~op (- (System/currentTimeMillis) start#) "ms")))
+
 (deftest integrate!
   (let [q (work/declare-queue
-           (work/->Queue "http://localhost:9200" (rand-queue) "foo"))
-        msgs 75
+           (work/->Queue "http://localhost:9200" (rand-queue) "test.foo")
+           :store :ram)
+        msgs 500
         pool (Executors/newFixedThreadPool
               (.availableProcessors (Runtime/getRuntime)))
-        published (java.util.concurrent.CountDownLatch. msgs)
         consumed (java.util.concurrent.CountDownLatch. msgs)
         n (atom 0)
-        xs (atom (sorted-set))]
-    (dotimes [x msgs]
-      (.execute pool
-                (fn []
-                  (work/publish q {:n 1 :x x})
-                  (.countDown published))))
-    (.await published)
-    (dotimes [_ msgs]
-      #_(log/log 'remain (work/queue-size q))
-      (.execute pool
-                (fn []
-                  (work/consume q (fn [msg]
-                                    (when msg
-                                      #_(log/log 'consume (-> msg :_source :x))
-                                      (swap! n + (-> msg :_source :n))
-                                      (swap! xs conj (-> msg :_source :x))
-                                      (.countDown consumed))))))
-      (Thread/sleep (rand-int 50)))
-    (.await consumed)
+        xs (atom (sorted-set))
+        go (fn [latch]
+             (fn [msg]
+               (when msg
+                 #_(log/log 'consume (-> msg :_source))
+                 (swap! n + (-> msg :_source :n))
+                 (swap! xs conj (-> msg :_source :x))
+                 (.countDown latch))))]
+    (time* 'publish
+      (work/publish-seq q (for [x (range msgs)]
+                            {:n 1 :x x})))
+    (time* 'consume
+      (dotimes [_ msgs]
+        #_(log/log 'remain (work/queue-size q))
+        (.execute pool
+                  (fn []
+                    (work/consume q (go consumed))))
+        #_(Thread/sleep (rand-int 5)))
+      (.await consumed))
     (log/log pool)
     (is (= msgs @n))
     (is (= msgs (count @xs)))
-    (is (= (apply sorted-set (range msgs)) @xs))))
+    (is (= (apply sorted-set (range msgs)) @xs))
+    (work/delete-queue q)))

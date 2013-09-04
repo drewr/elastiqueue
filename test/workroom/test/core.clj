@@ -18,7 +18,7 @@
            :store :ram)
         msgs 500
         pool (Executors/newFixedThreadPool
-              (.availableProcessors (Runtime/getRuntime)))
+              (int (/ (.availableProcessors (Runtime/getRuntime)) 2)))
         consumed (java.util.concurrent.CountDownLatch. msgs)
         n (atom 0)
         xs (atom (sorted-set))

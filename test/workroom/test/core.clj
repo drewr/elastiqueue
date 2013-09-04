@@ -37,7 +37,7 @@
         #_(log/log 'remain (work/queue-size q))
         (.execute pool
                   (fn []
-                    (work/consume q (go consumed))))
+                    (work/consume q 10 500 (go consumed))))
         #_(Thread/sleep (rand-int 5)))
       (.await consumed))
     (log/log pool)

@@ -13,7 +13,7 @@
      (log/log ~op (- (System/currentTimeMillis) start#) "ms")))
 
 (deftest integrate!
-  (let [q (work/declare-queue
+  (let [q (work/declare-exchange
            (work/->Queue "http://localhost:9200" (rand-queue) "test.foo")
            :store :ram)
         msgs 100

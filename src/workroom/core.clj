@@ -66,10 +66,10 @@
 (defn wait-for-health [q status]
   (http/get (health-url q status)))
 
-(defn declare-queue [q & {:keys [shards replicas store]
-                          :or {shards 1
-                               replicas 0
-                               store :niofs}}]
+(defn declare-exchange [q & {:keys [shards replicas store]
+                             :or {shards 1
+                                  replicas 0
+                                  store :niofs}}]
   (http/put (format "%s/%s" (:uri q) (:exchange q))
             {:body (json/encode
                     {:settings
@@ -83,8 +83,12 @@
   (wait-for-health q :yellow)
   q)
 
-(defn delete-queue [q]
+(defn delete-exchange [q]
   (http/delete (format "%s/%s" (:uri q) (:exchange q))))
+
+(defn delete-queue [q]
+  ;; todo
+  )
 
 (defn post-message [^Queue queue payload]
   (http/post (publish-url queue)
@@ -246,7 +250,9 @@
                   "queuetest"
                   "test.foo"))
 
-  (declare-queue q)
+  (do
+    (delete-exchange q)
+    (declare-exchange q))
 
   (publish-seq q (map #(hash-map :n %) (range 10)))
 

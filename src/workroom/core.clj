@@ -154,7 +154,7 @@
   (let [resps (->> coll
                    (partition-indexable-bulk bytes)
                    (map (partial apply str))
-                   (map (partial post-bulk queue))
+                   (pmap (partial post-bulk queue))
                    (map bulk-summary))]
     (reduce (fn [acc resp]
               (merge-with + (update-in acc [:bulks] (fnil inc 0))

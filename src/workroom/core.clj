@@ -66,16 +66,17 @@
 (defn wait-for-health [q status]
   (http/get (health-url q status)))
 
-(defn declare-exchange [q & {:keys [shards replicas store]
+(defn declare-exchange [q & {:keys [shards replicas]
                              :or {shards 1
-                                  replicas 0
-                                  store :niofs}}]
+                                  replicas 0}
+                             :as settings}]
   (http/put (format "%s/%s" (:uri q) (:exchange q))
             {:body (json/encode
                     {:settings
-                     {:number_of_shards shards
-                      :number_of_replicas replicas
-                      :store.type store}
+                     (merge
+                      {:number_of_shards shards
+                       :number_of_replicas replicas}
+                      settings)
                      :mappings
                      {(:name q)
                       {:properties

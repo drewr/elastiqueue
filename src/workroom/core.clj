@@ -114,6 +114,30 @@
         (apply str))
    "\n"))
 
+(defn take-bytes [bytes coll]
+  (lazy-seq
+    (when (pos? bytes)
+      (when-let [s (seq coll)]
+        (cons (first s) (take-bytes
+                         (- bytes (count (first s)))
+                         (rest coll)))))))
+
+(defn partition-bytes [bytes coll]
+  (lazy-seq
+    (when-let [s (seq coll)]
+      (let [seg (doall (take-bytes bytes s))]
+        (cons seg (partition-bytes bytes (nthrest s (count seg))))))))
+
+(defn make-bulk-op [doc]
+  (format "%s\n%s\n"
+          (json/encode {:index {}})
+          (json/encode doc)))
+
+(defn partition-indexable-bulk [bytes coll]
+  (->> coll
+       (map make-bulk-op)
+       (partition-bytes bytes)))
+
 (defn bulk-summary [response]
   (->> (json/decode (:body response) true)
        :items
@@ -125,9 +149,17 @@
                    (update-in res [:errors] inc)))
                {:success 0 :errors 0})))
 
-(defn publish-seq [^Queue queue coll]
-  (let [resp (post-bulk queue (make-indexable-bulk coll))]
-    (bulk-summary resp)))
+(defn publish-seq [^Queue queue coll & {:keys [bytes]
+                                        :or {bytes 1024}}]
+  (let [resps (->> coll
+                   (partition-indexable-bulk bytes)
+                   (map (partial apply str))
+                   (map (partial post-bulk queue))
+                   (map bulk-summary))]
+    (reduce (fn [acc resp]
+              (merge-with + (update-in acc [:bulks] (fnil inc 0))
+                          resp))
+            {} resps)))
 
 (defn get-msg [queue id]
   (json/decode (:body (http/get (get-url queue id))) true))

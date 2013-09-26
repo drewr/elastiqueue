@@ -1,1 +1,10 @@
+pom.xml
+*.jar
+lib
+classes
+/tmp/*
+/.lein-failures
+/.lein-deps-sum
+/target
 /.nrepl-port
+

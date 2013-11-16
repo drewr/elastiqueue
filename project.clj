@@ -1,5 +1,5 @@
 (defproject org.elasticsearch/elastiqueue "0.99.0"
-  :description "Publish/consume"
+  :description "You know... for messaging"
   :url "https://github.com/drewr/elastiqueue"
   :license {:name "The Apache 2 License"
             :url "http://www.apache.org/licenses/LICENSE-2.0.html"

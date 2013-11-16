@@ -1,5 +1,5 @@
 (ns elastiqueue.test.core
-  (:require [elastiqueue.core :as work]
+  (:require [elastiqueue.core :as esq]
             [elastiqueue.log :as log]
             [clojure.test :refer :all])
   (:import (java.util.concurrent Executors TimeUnit)))
@@ -14,8 +14,8 @@
 
 (defn t [msgs]
   (testing msgs
-    (let [q (work/declare-exchange
-             (work/->Queue "http://localhost:9200" (rand-queue) "test.foo")
+    (let [q (esq/declare-exchange
+             (esq/->Queue "http://localhost:9200" (rand-queue) "test.foo")
              :store :ram)
           pool (Executors/newFixedThreadPool
                 (int (/ (.availableProcessors (Runtime/getRuntime)) 2)))
@@ -32,14 +32,14 @@
                    (swap! xs conj (-> msg :_source :x))
                    (.countDown latch))))]
       (time* 'publish
-             (work/publish-seq q (for [x (range msgs)]
+             (esq/publish-seq q (for [x (range msgs)]
                                    {:n 1 :x x})))
       (time* 'consume
              (dotimes [n msgs]
-               '(log/log 'remain n (work/queue-size q))
+               '(log/log 'remain n (esq/queue-size q))
                (.execute pool
                          (fn []
-                           (work/consume q 10 500 (go consumed))))
+                           (esq/consume q 10 500 (go consumed))))
                (Thread/sleep (rand-int 5)))
              (.await consumed))
       (log/log 'COMPLETE (.getCompletedTaskCount pool))
@@ -48,9 +48,9 @@
       (is (= (apply sorted-set (range msgs)) @xs))
       (if (= msgs (count @xs))
         (doseq [m @ms]
-          (work/ack m)))
-      (is (= 0 (work/queue-size q)))
-      (work/delete-queue q))))
+          (esq/ack m)))
+      (is (= 0 (esq/queue-size q)))
+      (esq/delete-queue q))))
 
 (deftest integrate!
   (t 1)

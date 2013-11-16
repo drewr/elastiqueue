@@ -42,7 +42,7 @@
                            (work/consume q 10 500 (go consumed))))
                (Thread/sleep (rand-int 5)))
              (.await consumed))
-      (log/log pool)
+      (log/log 'COMPLETE (.getCompletedTaskCount pool))
       (is (= msgs @n))
       (is (= msgs (count @xs)))
       (is (= (apply sorted-set (range msgs)) @xs))

@@ -49,7 +49,7 @@
       (if (= msgs (count @xs))
         (doseq [m @ms]
           (work/ack m)))
-      (is (zero? (work/queue-size q)))
+      (is (= 0 (work/queue-size q)))
       (work/delete-queue q))))
 
 (deftest integrate!

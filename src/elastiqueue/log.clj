@@ -1,4 +1,4 @@
-(ns workroom.log)
+(ns elastiqueue.log)
 
 (def logger
   (agent nil))

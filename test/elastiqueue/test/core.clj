@@ -1,6 +1,6 @@
-(ns workroom.test.core
-  (:require [workroom.core :as work]
-            [workroom.log :as log]
+(ns elastiqueue.test.core
+  (:require [elastiqueue.core :as work]
+            [elastiqueue.log :as log]
             [clojure.test :refer :all])
   (:import (java.util.concurrent Executors TimeUnit)))
 
@@ -12,7 +12,7 @@
      ~@body
      (log/log ~op (- (System/currentTimeMillis) start#) "ms")))
 
-(defn test [msgs]
+(defn t [msgs]
   (testing msgs
     (let [q (work/declare-exchange
              (work/->Queue "http://localhost:9200" (rand-queue) "test.foo")
@@ -53,7 +53,7 @@
       (work/delete-queue q))))
 
 (deftest integrate!
-  (test 1)
-  (test 10)
-  (test 100)
-  (test 500))
+  (t 1)
+  (t 10)
+  (t 100)
+  (t 500))

@@ -1,8 +1,8 @@
-(ns workroom.core
+(ns elastiqueue.core
   (:require [clj-http.client :as http]
             [cheshire.core :as json]
             [slingshot.slingshot :refer [try+ throw+]]
-            [workroom.log :as log]))
+            [elastiqueue.log :as log]))
 
 (defrecord Queue [uri exchange name])
 

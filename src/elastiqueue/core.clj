@@ -2,9 +2,12 @@
   (:require [clj-http.client :as http]
             [cheshire.core :as json]
             [slingshot.slingshot :refer [try+ throw+]]
-            [elastiqueue.log :as log]))
+            [elastiqueue.log :as log]
+            [elastiqueue.url :as url]))
 
-(defrecord Queue [uri exchange name])
+(defrecord Exchange [uri name])
+
+(defrecord Queue [exchange name])
 
 (def status-field
   :__q_status)
@@ -26,80 +29,61 @@
    :sort [{control-field {:order "desc"}}]
    :size 1})
 
-(defn search-url [queue]
-  (format (str "%s/%s/%s/_search?"
-               "preference=_primary"
-               "&version=true")
-          (:uri queue) (:exchange queue) (:name queue)))
+(defn wait-for-health [exch status]
+  (http/get (url/health exch status)))
 
-(defn count-url [queue]
-  (format (str "%s/%s/%s/_count?"
-               "preference=_primary")
-          (:uri queue) (:exchange queue) (:name queue)))
+(defn declare-exchange [uri name &
+                        {:keys [shards replicas]
+                         :or {shards 1
+                              replicas 0}
+                         :as settings}]
+  (let [exch (->Exchange uri name)]
+    (try+
+     (http/put (format "%s/%s" (:uri exch) (:name exch))
+               {:body (json/encode
+                       {:settings
+                        (merge
+                         {:number_of_shards shards
+                          :number_of_replicas replicas}
+                         settings)})})
+     (wait-for-health exch :yellow)
+     exch
+     (catch [:status 400] _ exch))))
 
-(defn publish-url [^Queue queue]
-  (format "%s/%s/%s" (:uri queue) (:exchange queue) (:name queue)))
+(defn declare-queue [exch qname]
+  (let [q (->Queue exch qname)]
+    (http/put
+     (format "%s/%s/%s/_mapping"
+             (:uri exch)
+             (:name exch)
+             (:name q))
+     {:body (json/encode
+             {(:name q)
+              {:properties
+               {control-field {:type :string}}}})
+      :throw-entire-message? true})
+    q))
 
-(defn bulk-url [^Queue queue]
-  (format "%s/%s/%s/_bulk" (:uri queue) (:exchange queue) (:name queue)))
+(defn delete-exchange [^Exchange exch]
+  (http/delete
+   (format "%s/%s" (:uri exch) (:name exch))))
 
-(defn get-url [^Queue queue id]
-  (format "%s/%s/%s/%s"
-          (:uri queue) (:exchange queue) (:name queue) id))
-
-(defn update-url [^Queue queue id version]
-  (format "%s/%s/%s/%s?version=%d&refresh=true"
-          (:uri queue) (:exchange queue) (:name queue) id version))
-
-(defn health-url [q status]
-  (format "%s/_cluster/health/%s?wait_for_status=%s"
-          (:uri q) (:exchange q) (name status)))
-
-(defn delete-control-url [^Queue queue]
-  (format "%s/%s/%s/_query?q=%s:die OR %s:pause"
-          (:uri queue)
-          (:exchange queue)
-          (:name queue)
-          (name control-field)
-          (name control-field)))
-
-(defn wait-for-health [q status]
-  (http/get (health-url q status)))
-
-(defn declare-exchange [q & {:keys [shards replicas]
-                             :or {shards 1
-                                  replicas 0}
-                             :as settings}]
-  (http/put (format "%s/%s" (:uri q) (:exchange q))
-            {:body (json/encode
-                    {:settings
-                     (merge
-                      {:number_of_shards shards
-                       :number_of_replicas replicas}
-                      settings)
-                     :mappings
-                     {(:name q)
-                      {:properties
-                       {control-field {:type :string}}}}})})
-  (wait-for-health q :yellow)
-  q)
-
-(defn delete-exchange [q]
-  (http/delete (format "%s/%s" (:uri q) (:exchange q))))
-
-(defn delete-queue [q]
-  ;; todo
-  )
+(defn delete-queue [^Queue q]
+  (http/delete
+   (format "%s/%s/%s"
+           (-> q :exchange :uri)
+           (-> q :exchange :name)
+           (-> q :name))))
 
 (defn post-message [^Queue queue payload]
-  (http/post (publish-url queue)
+  (http/post (url/publish queue)
              {:body (json/encode payload)}))
 
 (defn post-bulk [^Queue queue bulk]
-  (http/post (bulk-url queue) {:body bulk}))
+  (http/post (url/bulk queue) {:body bulk}))
 
 (defn delete-control [^Queue queue]
-  (http/delete (delete-control-url queue)))
+  (http/delete (url/delete-control queue control-field)))
 
 (defn publish [^Queue queue payload]
   (let [resp (post-message queue payload)]
@@ -117,17 +101,17 @@
 
 (defn take-bytes [bytes coll]
   (lazy-seq
-    (when (pos? bytes)
-      (when-let [s (seq coll)]
-        (cons (first s) (take-bytes
-                         (- bytes (count (first s)))
-                         (rest coll)))))))
+   (when (pos? bytes)
+     (when-let [s (seq coll)]
+       (cons (first s) (take-bytes
+                        (- bytes (count (first s)))
+                        (rest coll)))))))
 
 (defn partition-bytes [bytes coll]
   (lazy-seq
-    (when-let [s (seq coll)]
-      (let [seg (doall (take-bytes bytes s))]
-        (cons seg (partition-bytes bytes (nthrest s (count seg))))))))
+   (when-let [s (seq coll)]
+     (let [seg (doall (take-bytes bytes s))]
+       (cons seg (partition-bytes bytes (nthrest s (count seg))))))))
 
 (defn make-bulk-op [doc]
   (format "%s\n%s\n"
@@ -163,10 +147,10 @@
             {} resps)))
 
 (defn get-msg [queue id]
-  (json/decode (:body (http/get (get-url queue id))) true))
+  (json/decode (:body (http/get (url/get queue id))) true))
 
 (defn consumables [^Queue queue]
-  (let [response (http/get (search-url queue)
+  (let [response (http/get (url/search queue)
                            {:body (json/encode (consumable-query
                                                 (:name queue)))})]
     (json/decode (:body response) true)))
@@ -184,7 +168,7 @@
   (delete-control queue))
 
 (defn paused? [^Queue queue]
-  (let [response (http/post (count-url queue)
+  (let [response (http/post (url/count queue)
                             {:body
                              (json/encode
                               {:match
@@ -193,7 +177,7 @@
     (pos? total)))
 
 (defn disabled? [^Queue queue]
-  (let [response (http/post (count-url queue)
+  (let [response (http/post (url/count queue)
                             {:body
                              (json/encode
                               {:match
@@ -202,7 +186,7 @@
     (pos? total)))
 
 (defn unack-count [^Queue queue]
-  (let [response (http/post (count-url queue)
+  (let [response (http/post (url/count queue)
                             {:body
                              (json/encode
                               {:match
@@ -211,8 +195,10 @@
 
 (defn update-status [msg status]
   (let [payload (assoc (:_source msg) status-field status)
-        queue (->Queue (:_uri msg) (:_index msg) (:_type msg))
-        response (http/put (update-url queue (:_id msg) (:_version msg))
+        queue (->Queue
+               (->Exchange (:_uri msg) (:_index msg))
+               (:_type msg))
+        response (http/put (url/update queue (:_id msg) (:_version msg))
                            {:body (json/encode payload)})]
     (json/decode (:body response) true)))
 
@@ -227,22 +213,22 @@
 (defn head [^Queue queue]
   (when-let [msg (-> (consumables queue) :hits :hits first)]
     (assoc msg
-      :_uri (:uri queue))))
+      :_uri (-> queue :exchange :uri))))
 
 (defn control-msg? [msg]
   (-> msg :_source control-field))
 
-(defn consume-msg [queue]
+(defn consume-msg [^Queue queue]
   (try+
-    (when-let [msg (head queue)]
-      (if (control-msg? msg)
-        (-> msg :_source control-field)
-        (do
-          (unack msg)
-          msg)))
-    (catch [:status 409] _)))
+   (when-let [msg (head queue)]
+     (if (control-msg? msg)
+       (-> msg :_source control-field)
+       (do
+         (unack msg)
+         msg)))
+   (catch [:status 409] _)))
 
-(defn consume-wait [queue wait retry]
+(defn consume-wait [^Queue queue wait retry]
   #_(log/log 'retry retry)
   (when (pos? retry)
     (if-let [msg (consume-msg queue)]
@@ -279,15 +265,18 @@
 (defn handle-msg [msg])
 
 (comment
-  (def q (->Queue "http://localhost:9200"
-                  "queuetest"
-                  "test.foo"))
+  (def exch
+    (declare-exchange "http://localhost:9200" "queuetest"))
+
+  (def q
+    (declare-queue exch "test.foo"))
 
   (do
-    (delete-exchange q)
-    (declare-exchange q))
+    (delete-exchange exch))
 
   (publish-seq q (map #(hash-map :n %) (range 10)))
+  (queue-size q)
+  (consume-msg q)
 
   (def worker
     (let [c (atom 0)]

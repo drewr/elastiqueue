@@ -4,8 +4,10 @@
             [clojure.test :refer :all])
   (:import (java.util.concurrent Executors TimeUnit)))
 
-(defn rand-queue []
-  (format "test-%d" (System/currentTimeMillis)))
+(defn rand-exch []
+  (let [n (format "test-%d" (System/currentTimeMillis))]
+    (esq/declare-exchange "http://localhost:9200" n
+                          :store :ram)))
 
 (defmacro time* [op & body]
   `(let [start# (System/currentTimeMillis)]
@@ -14,9 +16,8 @@
 
 (defn t [msgs]
   (testing msgs
-    (let [q (esq/declare-exchange
-             (esq/->Queue "http://localhost:9200" (rand-queue) "test.foo")
-             :store :ram)
+    (let [exch (rand-exch)
+          q (esq/declare-queue exch "test.foo")
           pool (Executors/newFixedThreadPool
                 (int (/ (.availableProcessors (Runtime/getRuntime)) 2)))
           consumed (java.util.concurrent.CountDownLatch. msgs)
@@ -33,7 +34,7 @@
                    (.countDown latch))))]
       (time* 'publish
              (esq/publish-seq q (for [x (range msgs)]
-                                   {:n 1 :x x})))
+                                  {:n 1 :x x})))
       (time* 'consume
              (dotimes [n msgs]
                '(log/log 'remain n (esq/queue-size q))
@@ -50,10 +51,10 @@
         (doseq [m @ms]
           (esq/ack m)))
       (is (= 0 (esq/queue-size q)))
-      (esq/delete-queue q))))
+      (esq/delete-queue q)
+      (esq/delete-exchange exch))))
 
 (deftest integrate!
   (t 1)
   (t 10)
-  (t 100)
-  (t 500))
+  (t 100))

@@ -1,13 +1,13 @@
 (ns elastiqueue.test.core
-  (:require [elastiqueue.core :as esq]
+  (:require [elastiqueue.core :as q]
             [elastiqueue.log :as log]
             [clojure.test :refer :all])
   (:import (java.util.concurrent Executors TimeUnit)))
 
 (defn rand-exch []
   (let [n (format "test-%d" (System/currentTimeMillis))]
-    (esq/declare-exchange "http://localhost:9200" n
-                          :store :ram)))
+    (q/declare-exchange "http://localhost:9200" n
+                        :store :ram)))
 
 (defmacro time* [op & body]
   `(let [start# (System/currentTimeMillis)]
@@ -17,7 +17,7 @@
 (defn t [msgs]
   (testing msgs
     (let [exch (rand-exch)
-          q (esq/declare-queue exch "test.foo")
+          q (q/declare-queue exch "test.foo")
           pool (Executors/newFixedThreadPool
                 (int (/ (.availableProcessors (Runtime/getRuntime)) 2)))
           consumed (java.util.concurrent.CountDownLatch. msgs)
@@ -33,14 +33,14 @@
                    (swap! xs conj (-> msg :_source :x))
                    (.countDown latch))))]
       (time* 'publish
-             (esq/publish-seq q (for [x (range msgs)]
-                                  {:n 1 :x x})))
+             (q/publish-seq q (for [x (range msgs)]
+                                {:n 1 :x x})))
       (time* 'consume
              (dotimes [n msgs]
-               '(log/log 'remain n (esq/queue-size q))
+               '(log/log 'remain n (q/queue-size q))
                (.execute pool
                          (fn []
-                           (esq/consume q 10 500 (go consumed))))
+                           (q/consume q 10 500 (go consumed))))
                (Thread/sleep (rand-int 5)))
              (.await consumed))
       (log/log 'COMPLETE (.getCompletedTaskCount pool))
@@ -49,10 +49,10 @@
       (is (= (apply sorted-set (range msgs)) @xs))
       (if (= msgs (count @xs))
         (doseq [m @ms]
-          (esq/ack m)))
-      (is (= 0 (esq/queue-size q)))
-      (esq/delete-queue q)
-      (esq/delete-exchange exch))))
+          (q/ack m)))
+      (is (= 0 (q/queue-size q)))
+      (q/delete-queue q)
+      (q/delete-exchange exch))))
 
 (deftest integrate!
   (t 1)

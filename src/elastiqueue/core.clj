@@ -152,7 +152,8 @@
 (defn consumables [^Queue queue]
   (let [response (http/get (url/search queue)
                            {:body (json/encode (consumable-query
-                                                (:name queue)))})]
+                                                (:name queue)))
+                            :throw-exceptions true})]
     (json/decode (:body response) true)))
 
 (defn queue-size [^Queue queue]
@@ -226,7 +227,8 @@
        (do
          (unack msg)
          msg)))
-   (catch [:status 409] _)))
+   (catch [:status 409] _)
+   (catch [:status 404] _)))
 
 (defn consume-wait [^Queue queue wait retry]
   #_(log/log 'retry retry)

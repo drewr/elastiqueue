@@ -1,4 +1,4 @@
-(defproject org.elasticsearch/elastiqueue "0.99.1"
+(defproject org.elasticsearch/elastiqueue "1.0.0-SNAPSHOT"
   :description "You know... for messaging"
   :url "https://github.com/drewr/elastiqueue"
   :license {:name "The Apache 2 License"

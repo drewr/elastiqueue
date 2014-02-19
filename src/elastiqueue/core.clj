@@ -87,7 +87,7 @@
 
 (defn publish [^Queue queue payload]
   (let [resp (post-message queue payload)]
-    (wait-for-health queue :yellow)
+    (wait-for-health (:exchange queue) :yellow)
     resp))
 
 (defn make-indexable-bulk [coll]

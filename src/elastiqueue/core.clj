@@ -227,8 +227,8 @@
        (do
          (unack msg)
          msg)))
-   (catch [:status 409] _)
-   (catch [:status 404] _)))
+   (catch [:status 404] _)
+   (catch [:status 409] _)))
 
 (defn consume-wait [^Queue queue wait retry]
   #_(log/log 'retry retry)

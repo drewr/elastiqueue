@@ -9,8 +9,7 @@
 
 (defn search [queue]
   (format (str "%s/_search?"
-               "preference=_primary"
-               "&version=true") (prefix queue)))
+               "version=true") (prefix queue)))
 
 (defn count [queue]
   (format (str "%s/_count?"

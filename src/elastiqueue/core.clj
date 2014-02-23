@@ -229,6 +229,9 @@
          msg)))
    (catch [:status 404] _)
    (catch [:status 409] _)))
+(defn sleep [ms]
+  (log/log 'sleep)
+  (.sleep java.util.concurrent.TimeUnit/MILLISECONDS ms))
 
 (defn consume-wait [^Queue queue wait retry]
   #_(log/log 'retry retry)
@@ -236,7 +239,7 @@
     (if-let [msg (consume-msg queue)]
       msg
       (do
-        (Thread/sleep wait)
+        (sleep (rand-int wait))
         (recur queue wait (dec retry))))))
 
 (defn consume
@@ -248,10 +251,6 @@
      (consume-wait queue wait retry))
   ([^Queue queue wait retry f]
      (f (consume queue wait retry))))
-
-(defn sleep [ms]
-  (log/log 'sleep)
-  (.sleep java.util.concurrent.TimeUnit/MILLISECONDS ms))
 
 (defn consume-poll
   ([^Queue queue f]

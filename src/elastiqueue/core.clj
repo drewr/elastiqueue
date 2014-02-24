@@ -2,6 +2,7 @@
   (:require [clj-http.client :as http]
             [cheshire.core :as json]
             [slingshot.slingshot :refer [try+ throw+]]
+            [elastiqueue.date :as date]
             [elastiqueue.log :as log]
             [elastiqueue.url :as url]))
 
@@ -9,11 +10,35 @@
 
 (defrecord Queue [exchange name])
 
+(def q-key
+  :q)
+
 (def status-field
-  :__q_status)
+  (->> [q-key "." :status]
+       (map name)
+       (apply str)
+       keyword))
 
 (def control-field
-  :__q_control)
+  (->> [q-key "." :control]
+       (map name)
+       (apply str)
+       keyword))
+
+(def status-log-field
+  (->> [q-key "." :log]
+       (map name)
+       (apply str)
+       keyword))
+
+(def status-count-field
+  (->> [q-key "." :updated]
+       (map name)
+       (apply str)
+       keyword))
+
+(defn control-msg? [msg]
+  (-> msg :_source q-key :control))
 
 (defn consumable-query [queue-name]
   {:query
@@ -195,46 +220,53 @@
     (-> response :body (#(json/decode % true)) :count)))
 
 (defn update-status [msg status]
-  (let [payload (assoc (:_source msg) status-field status)
+  (let [payload (-> (:_source msg)
+                    (assoc status-field status)
+                    (update-in [status-log-field] (fnil conj [])
+                               {:time (date/now)
+                                :status status
+                                :host "host"})
+                    (update-in [status-count-field] (fnil inc 0)))
         queue (->Queue
                (->Exchange (:_uri msg) (:_index msg))
                (:_type msg))
         response (http/put (url/update queue (:_id msg) (:_version msg))
                            {:body (json/encode payload)})]
-    (json/decode (:body response) true)))
+    (-> (http/get (url/get queue (:_id msg)))
+        :body
+        (json/decode true)
+        (assoc :_uri (-> queue :exchange :uri) ))))
 
 (defn unack [msg]
   (update-status msg :unack))
 
 (defn ack [msg]
-  (let [msg (assoc msg
-              :_version (inc (:_version msg)))]
-    (update-status msg :ack)))
+  (update-status msg :ack))
 
 (defn head [^Queue queue]
   (when-let [msg (-> (consumables queue) :hits :hits first)]
     (assoc msg
       :_uri (-> queue :exchange :uri))))
 
-(defn control-msg? [msg]
-  (-> msg :_source control-field))
-
 (defn consume-msg [^Queue queue]
   (try+
    (when-let [msg (head queue)]
      (if (control-msg? msg)
        (-> msg :_source control-field)
-       (do
-         (unack msg)
-         msg)))
-   (catch [:status 404] _)
-   (catch [:status 409] _)))
+       (unack msg)))
+   (catch [:status 404] e
+     (log/log 'consume-msg 404)
+     nil)
+   (catch [:status 409] e
+     (log/log 'consume-msg 409 'lost!)
+     nil)))
+
 (defn sleep [ms]
-  (log/log 'sleep)
+  #_(log/log 'sleep)
   (.sleep java.util.concurrent.TimeUnit/MILLISECONDS ms))
 
 (defn consume-wait [^Queue queue wait retry]
-  #_(log/log 'retry retry)
+  #_(log/log 'consume-wait 'retry)
   (when (pos? retry)
     (if-let [msg (consume-msg queue)]
       msg
@@ -244,7 +276,7 @@
 
 (defn consume
   ([^Queue queue]
-     (consume queue 150 20))
+     (consume queue 500 20))
   ([^Queue queue f]
      (f (consume queue)))
   ([^Queue queue wait retry]
@@ -267,10 +299,10 @@
 
 (comment
   (def exch
-    (declare-exchange "http://localhost:9200" "queuetest"))
+    (declare-exchange "http://localhost:9200" "queue"))
 
   (def q
-    (declare-queue exch "test.foo"))
+    (declare-queue exch "s2e.default"))
 
   (do
     (delete-exchange exch))

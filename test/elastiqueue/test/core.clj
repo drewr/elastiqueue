@@ -27,7 +27,7 @@
           go (fn [latch]
                (fn [msg]
                  (when msg
-                   #_(log/log 'consume (-> msg :_source))
+                   #_(log/log 'consume msg)
                    (swap! ms conj msg)
                    (swap! n + (-> msg :_source :n))
                    (swap! xs conj (-> msg :_source :x))
@@ -37,13 +37,15 @@
                                 {:n 1 :x x})))
       (time* 'consume
              (dotimes [n msgs]
-               '(log/log 'remain n (q/queue-size q))
+               #_(log/log 'remain n (q/queue-size q))
                (.execute pool
                          (fn []
                            (q/consume q 10 500 (go consumed))))
-               (Thread/sleep (rand-int 5)))
+               (q/sleep (rand-int 5)))
              (.await consumed))
-      (log/log 'COMPLETE (.getCompletedTaskCount pool))
+      (is (= 0 (q/queue-size q)))
+      (log/log 'COMPLETE msgs (.getCompletedTaskCount pool))
+      (is (= msgs (.getCompletedTaskCount pool)))
       (is (= msgs @n))
       (is (= msgs (count @xs)))
       (is (= (apply sorted-set (range msgs)) @xs))

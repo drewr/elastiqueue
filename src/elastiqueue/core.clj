@@ -225,7 +225,8 @@
                     (update-in [status-log-field] (fnil conj [])
                                {:time (date/now)
                                 :status status
-                                :host "host"})
+                                :host (.getHostName
+                                       (java.net.InetAddress/getLocalHost))})
                     (update-in [status-count-field] (fnil inc 0)))
         queue (->Queue
                (->Exchange (:_uri msg) (:_index msg))

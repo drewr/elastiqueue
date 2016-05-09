@@ -14,31 +14,25 @@
   :q)
 
 (def status-field
-  (->> [q-key "." :status]
-       (map name)
-       (apply str)
-       keyword))
+  :status)
 
 (def control-field
-  (->> [q-key "." :control]
-       (map name)
-       (apply str)
-       keyword))
+  :control)
 
 (def status-log-field
-  (->> [q-key "." :log]
-       (map name)
-       (apply str)
-       keyword))
+  :log)
 
 (def status-count-field
-  (->> [q-key "." :updated]
+  :updated)
+
+(defn resolve-field [& args]
+  (->> args
+       (interpose ".")
        (map name)
-       (apply str)
-       keyword))
+       (apply str)))
 
 (defn control-msg? [msg]
-  (-> msg :_source q-key :control))
+  (-> msg :_source q-key control-field))
 
 (defn consumable-query [queue-name]
   {:query
@@ -46,12 +40,12 @@
     {:must [{:constant_score
              {:filter
               {:missing
-               {:field status-field
+               {:field (resolve-field q-key status-field)
                 :existence true
                 :null_value true}}}}
             {:prefix
              {:_type queue-name}}]}}
-   :sort [{control-field {:order "desc"}}]
+   :sort [{(resolve-field q-key control-field) {:order "desc"}}]
    :size 1})
 
 (defn wait-for-health [exch status]
@@ -73,7 +67,7 @@
                          settings)})})
      (wait-for-health exch :yellow)
      exch
-     (catch [:status 400] _ exch))))
+     #_(catch [:status 400] _ exch))))
 
 (defn declare-queue [exch qname]
   (let [q (->Queue exch qname)]
@@ -85,7 +79,9 @@
      {:body (json/encode
              {(:name q)
               {:properties
-               {control-field {:type :string}}}})
+               {q-key
+                {:properties
+                 {control-field {:type :string}}}}}})
       :throw-entire-message? true})
     q))
 
@@ -222,12 +218,12 @@
 (defn update-status [msg status]
   (let [payload (-> (:_source msg)
                     (assoc status-field status)
-                    (update-in [status-log-field] (fnil conj [])
+                    (update-in [q-key status-log-field] (fnil conj [])
                                {:time (date/now)
                                 :status status
                                 :host (.getHostName
                                        (java.net.InetAddress/getLocalHost))})
-                    (update-in [status-count-field] (fnil inc 0)))
+                    (update-in [q-key status-count-field] (fnil inc 0)))
         queue (->Queue
                (->Exchange (:_uri msg) (:_index msg))
                (:_type msg))

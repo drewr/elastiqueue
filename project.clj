@@ -7,4 +7,4 @@
   :dependencies [[slingshot "0.10.3"]
                  [cheshire "5.2.0"]
                  [clj-http "0.7.6"]]
-  :profiles {:dev {:dependencies [[org.clojure/clojure "1.5.1"]]}})
+  :profiles {:dev {:dependencies [[org.clojure/clojure "1.8.0"]]}})
